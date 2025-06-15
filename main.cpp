@@ -203,6 +203,11 @@ int main(int argc, char* argv[]) {
 	double used = calculate_used_hours(days_off);
 	double available = accrued - used;
 
-	std::cout << "Available PTO hours: " << available << "\n";
+
+	std::cout << "PTO Summary:\n"
+		<< "  Accrued:  " << accrued << " hours\n"
+		<< "  Used:     " << used << " hours\n"
+		<< "  Balance:  " << available << " hours\n";
+
 	return 0;
 }
