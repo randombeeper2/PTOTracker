@@ -136,12 +136,15 @@
     <ClInclude Include="json.hpp" />
   </ItemGroup>
   <ItemGroup>
-    <CopyFileToFolders Include="days_off.json">
+    <None Include="days_off.json">
       <FileType>Document</FileType>
-    </CopyFileToFolders>
-    <CopyFileToFolders Include="settings.json">
+    </None>
+    <None Include="settings.json">
       <FileType>Document</FileType>
-    </CopyFileToFolders>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="usholidays.json" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
