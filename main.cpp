@@ -15,6 +15,15 @@ using json = nlohmann::json;
 const std::string SETTINGS_FILE = "../../settings.json";
 const std::string DAYS_OFF_FILE = "../../days_off.json";
 
+bool entry_exists(const nlohmann::json& days_off, const std::string& key, const std::string& date) {
+	for (const auto& entry : days_off) {
+		if (entry.contains(key) && entry[key] == date) {
+			return true;
+		}
+	}
+	return false;
+}
+
 std::tm parse_date(const std::string& date_str) {
 	std::tm tm = {};
 	std::istringstream ss(date_str);
@@ -147,6 +156,20 @@ int main(int argc, char* argv[]) {
 	if (argc >= 3 && std::string(argv[1]) == "add") {
 		std::string date = argv[2];
 		double hours = (argc >= 4) ? std::stod(argv[3]) : 8.0;
+
+		// don't add a date that already exists
+		if (entry_exists(days_off, "date", date)) {
+			std::cerr << "Error: A time-off entry for " << date << " already exists.\n";
+			return 1;
+		}
+
+		// don't add a weekend day
+		std::tm date_tm = parse_date(date);
+		if (!is_weekday(date_tm)) {
+			std::cerr << "Error: Trying to add a date that is a weekend.\n";
+			return 1;
+		}
+
 		days_off.push_back({ {"date", date}, {"hours", hours} });
 		save_days_off(DAYS_OFF_FILE, days_off);
 		std::cout << "Added day off: " << date << " (" << hours << "h)\n";
@@ -158,6 +181,28 @@ int main(int argc, char* argv[]) {
 		std::string start = argv[2];
 		std::string end = argv[3];
 		double hours_per_day = (argc >= 5) ? std::stod(argv[4]) : 8.0;
+
+		// doesn't handle an overlap. for example if 06/20 is already in the days off and we add
+		// 6/19-6/22, its not going to care...
+		if (entry_exists(days_off, "date", start) || entry_exists(days_off, "date", end) || 
+			entry_exists(days_off, "start_date", start) || entry_exists(days_off, "start_date", end) || 
+			entry_exists(days_off, "end_date", start) || entry_exists(days_off, "end_date", end)) {
+			std::cerr << "Error: A time-off entry already exists for the start or end date.\n";
+			return 1;
+		}
+
+		// don't add a weekend day
+		std::tm start_tm = parse_date(start);
+		if (!is_weekday(start_tm)) {
+			std::cerr << "Error: Trying to add a start_date that is a weekend.\n";
+			return 1;
+		}
+		std::tm end_tm = parse_date(end);
+		if (!is_weekday(end_tm)) {
+			std::cerr << "Error: Trying to add a end_date that is a weekend.\n";
+			return 1;
+		}
+
 		days_off.push_back({
 			{"start_date", start},
 			{"end_date", end},
