@@ -49,6 +49,23 @@ bool is_weekday(const std::tm& tm) {
 	return lt->tm_wday != 0 && lt->tm_wday != 6; // not Sunday or Saturday
 }
 
+int working_days_elapsed(const std::tm& start_date) {
+	std::time_t now = std::time(nullptr);
+	std::tm today = *std::localtime(&now);
+
+	std::time_t start = std::mktime(const_cast<std::tm*>(&start_date));
+	std::time_t end = std::mktime(&today);
+
+	int weekdays_elapsed = 0;
+	for (std::time_t t = start; t <= end; t += 86400) {
+		std::tm* tm = std::localtime(&t);
+		if (is_weekday(*tm)) {
+			weekdays_elapsed++;
+		}
+	}
+	return weekdays_elapsed;
+}
+
 double calculate_accrued_hours(const std::tm& start_date, double accrual_rate) {
 	std::time_t now = std::time(nullptr);
 	std::tm today = *std::localtime(&now);
@@ -120,7 +137,7 @@ void print_usage() {
 		<< "  pto                        Show available PTO\n"
 		<< "  pto add <date> [hours]     Add a day off (default: 8 hours)\n"
 		<< "  pto add_range <start> <end> [hours/day]  Add range of days off (default: 8)\n"
-		<< "  pto list                   List all saved days off\n"
+		<< "  pto showvaca               Show all saved days off\n"
 		<< "  pto remove <date>          Remove entries matching a date (exact match to 'date' or 'start_date')\n"
 		<< "  pto usage                  Show this help message\n\n"
 		<< "Date format: yyyy-mm-dd\n\n";
@@ -214,7 +231,7 @@ int main(int argc, char* argv[]) {
 	}
 
 	// CLI: list
-	if (argc >= 2 && std::string(argv[1]) == "list") {
+	if (argc >= 2 && std::string(argv[1]) == "showvaca") {
 		list_days_off(days_off);
 		return 0;
 	}
@@ -247,12 +264,19 @@ int main(int argc, char* argv[]) {
 	double accrued = calculate_accrued_hours(start_tm, rate);
 	double used = calculate_used_hours(days_off);
 	double available = accrued - used;
+	int working_days = working_days_elapsed(start_tm);
 
+	std::cout << std::fixed << std::setprecision(1);
 
+	list_days_off(days_off);
 	std::cout << "PTO Summary:\n"
-		<< "  Accrued:  " << accrued << " hours\n"
-		<< "  Used:     " << used << " hours\n"
-		<< "  Balance:  " << available << " hours\n";
+		<< "  Accrual Rate:" << rate << " hours/day\n"
+		<< "  Working Days:" << working_days << " days\n"
+		<< "  Accrued:     " << accrued << " hours\n"
+		<< "  Used:        " << used << " hours\n"
+		<< "  Balance:     " << available << " hours\n";
+
+	
 
 	return 0;
 }
