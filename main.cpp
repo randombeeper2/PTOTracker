@@ -268,11 +268,11 @@ int main(int argc, char* argv[]) {
 
 	// Default behavior: calculate PTO
 	std::tm start_tm = date_string_to_tm(settings["start_date"]);
-	double rate = settings["accrual_rate_per_day"];
-	double accrued = calculate_accrued_hours(days_off, start_tm, rate);
-	double used = calculate_hours_of_days_off(days_off);
-	double available = accrued - used;
-	int working_days = working_days_elapsed_since(start_tm);
+	double accrual_rate = settings["accrual_rate_per_day"];
+	double accrued_hours_since_hired = calculate_accrued_hours(days_off, start_tm, accrual_rate);
+	double hours_taken_off = calculate_hours_of_days_off(days_off);
+	double hours_available = accrued_hours_since_hired - hours_taken_off;
+	int working_days_since_hired = working_days_elapsed_since(start_tm);
 
 	std::cout << std::fixed << std::setprecision(1);
 
@@ -281,13 +281,13 @@ int main(int argc, char* argv[]) {
 	list_days_off(days_off);
 
 	std::cout << "Summary:\n"
-		<< "  Accrual Rate:" << rate << " hours/day\n"
-		<< "  Working Days:" << working_days << " days\n"
-		<< "  Accrued:     " << accrued << " hours\n"
-		<< "  Used:        " << used << " hours\n"
-		<< "  Balance:     " << available << " hours\n";
+		<< "  Accrual Rate:             " << accrual_rate << " hours/day\n"
+		<< "  Working Days Since Hired: " << working_days_since_hired << " days\n"
+		<< "  Hours Accrued:            " << accrued_hours_since_hired << " hours\n"
+		<< "  Hours Used:               " << hours_taken_off << " hours\n"
+		<< "  Hours Balance:            " << hours_available << " hours\n";
 
-	if (available > 40) {
+	if (hours_available > 40) {
 		std::cout << "YOU SHOULD TAKE SOME VACATION!!!!";
 	}
 	
