@@ -15,7 +15,7 @@ using json = nlohmann::json;
 const std::string SETTINGS_FILE = "../../settings.json";
 const std::string DAYS_OFF_FILE = "../../days_off.json";
 
-bool entry_exists(const nlohmann::json& days_off, const std::string& key, const std::string& date) {
+static bool entry_exists(const nlohmann::json& days_off, const std::string& key, const std::string& date) {
 	for (const auto& entry : days_off) {
 		if (entry.contains(key) && entry[key] == date) {
 			return true;
@@ -24,7 +24,15 @@ bool entry_exists(const nlohmann::json& days_off, const std::string& key, const 
 	return false;
 }
 
-std::tm parse_date(const std::string& date_str) {
+// this needs to check if the date provided is contained within any days off entries
+// including date, start_date, end_date, and between start_date & end_date
+static bool is_day_off(const nlohmann::json& days_off, const std::string& date) {
+	// check specific dates
+	// check date ranges
+
+}
+
+std::tm date_string_to_tm(const std::string& date_str) {
 	std::tm tm = {};
 	std::istringstream ss(date_str);
 	ss >> std::get_time(&tm, "%Y-%m-%d");
@@ -37,7 +45,7 @@ std::tm parse_date(const std::string& date_str) {
 	return tm;
 }
 
-std::string format_date(const std::tm& tm) {
+std::string tm_to_date_string(const std::tm& tm) {
 	std::ostringstream oss;
 	oss << std::put_time(&tm, "%Y-%m-%d");
 	return oss.str();
@@ -49,7 +57,7 @@ bool is_weekday(const std::tm& tm) {
 	return lt->tm_wday != 0 && lt->tm_wday != 6; // not Sunday or Saturday
 }
 
-int working_days_elapsed(const std::tm& start_date) {
+int working_days_elapsed_since(const std::tm& start_date) {
 	std::time_t now = std::time(nullptr);
 	std::tm today = *std::localtime(&now);
 
@@ -66,7 +74,7 @@ int working_days_elapsed(const std::tm& start_date) {
 	return weekdays_elapsed;
 }
 
-double calculate_accrued_hours(const std::tm& start_date, double accrual_rate) {
+double calculate_accrued_hours(const json& days_off, const std::tm& start_date, double accrual_rate) {
 	std::time_t now = std::time(nullptr);
 	std::tm today = *std::localtime(&now);
 
@@ -83,7 +91,7 @@ double calculate_accrued_hours(const std::tm& start_date, double accrual_rate) {
 	return accrued;
 }
 
-double calculate_used_hours(const json& days_off) {
+double calculate_hours_of_days_off(const json& days_off) {
 	double used_hours = 0.0;
 
 	for (const auto& entry : days_off) {
@@ -91,8 +99,8 @@ double calculate_used_hours(const json& days_off) {
 			used_hours += entry.value("hours", 8.0);
 		}
 		else if (entry.contains("start_date") && entry.contains("end_date")) {
-			std::tm start_tm = parse_date(entry["start_date"]);
-			std::tm end_tm = parse_date(entry["end_date"]);
+			std::tm start_tm = date_string_to_tm(entry["start_date"]);
+			std::tm end_tm = date_string_to_tm(entry["end_date"]);
 			double hours_per_day = entry.value("hours_per_day", 8.0);
 
 			std::time_t start = std::mktime(&start_tm);
@@ -137,7 +145,7 @@ void print_usage() {
 		<< "  pto                        Show available PTO\n"
 		<< "  pto add <date> [hours]     Add a day off (default: 8 hours)\n"
 		<< "  pto add_range <start> <end> [hours/day]  Add range of days off (default: 8)\n"
-		<< "  pto showvaca               Show all saved days off\n"
+		<< "  pto show_days_off               Show all saved days off\n"
 		<< "  pto remove <date>          Remove entries matching a date (exact match to 'date' or 'start_date')\n"
 		<< "  pto usage                  Show this help message\n\n"
 		<< "Date format: yyyy-mm-dd\n\n";
@@ -181,7 +189,7 @@ int main(int argc, char* argv[]) {
 		}
 
 		// don't add a weekend day
-		std::tm date_tm = parse_date(date);
+		std::tm date_tm = date_string_to_tm(date);
 		if (!is_weekday(date_tm)) {
 			std::cerr << "Error: Trying to add a date that is a weekend.\n";
 			return 1;
@@ -209,12 +217,12 @@ int main(int argc, char* argv[]) {
 		}
 
 		// don't add a weekend day
-		std::tm start_tm = parse_date(start);
+		std::tm start_tm = date_string_to_tm(start);
 		if (!is_weekday(start_tm)) {
 			std::cerr << "Error: Trying to add a start_date that is a weekend.\n";
 			return 1;
 		}
-		std::tm end_tm = parse_date(end);
+		std::tm end_tm = date_string_to_tm(end);
 		if (!is_weekday(end_tm)) {
 			std::cerr << "Error: Trying to add a end_date that is a weekend.\n";
 			return 1;
@@ -231,7 +239,7 @@ int main(int argc, char* argv[]) {
 	}
 
 	// CLI: list
-	if (argc >= 2 && std::string(argv[1]) == "showvaca") {
+	if (argc >= 2 && std::string(argv[1]) == "show_days_off") {
 		list_days_off(days_off);
 		return 0;
 	}
@@ -259,23 +267,29 @@ int main(int argc, char* argv[]) {
 	}
 
 	// Default behavior: calculate PTO
-	std::tm start_tm = parse_date(settings["start_date"]);
+	std::tm start_tm = date_string_to_tm(settings["start_date"]);
 	double rate = settings["accrual_rate_per_day"];
-	double accrued = calculate_accrued_hours(start_tm, rate);
-	double used = calculate_used_hours(days_off);
+	double accrued = calculate_accrued_hours(days_off, start_tm, rate);
+	double used = calculate_hours_of_days_off(days_off);
 	double available = accrued - used;
-	int working_days = working_days_elapsed(start_tm);
+	int working_days = working_days_elapsed_since(start_tm);
 
 	std::cout << std::fixed << std::setprecision(1);
 
+	std::cout << "=== Paid Time Off Tracker ===\n";
+
 	list_days_off(days_off);
-	std::cout << "PTO Summary:\n"
+
+	std::cout << "Summary:\n"
 		<< "  Accrual Rate:" << rate << " hours/day\n"
 		<< "  Working Days:" << working_days << " days\n"
 		<< "  Accrued:     " << accrued << " hours\n"
 		<< "  Used:        " << used << " hours\n"
 		<< "  Balance:     " << available << " hours\n";
 
+	if (available > 40) {
+		std::cout << "YOU SHOULD TAKE SOME VACATION!!!!";
+	}
 	
 
 	return 0;
