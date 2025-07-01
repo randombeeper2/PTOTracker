@@ -74,6 +74,20 @@ int working_days_elapsed_since(const std::tm& start_date) {
 	return weekdays_elapsed;
 }
 
+double calculate_accrued_hours_to(const json& days_off, const std::tm& from_date, const std::tm& to_date, double accrual_rate) {
+	std::time_t start = std::mktime(const_cast<std::tm*>(&from_date));
+	std::time_t end = std::mktime(const_cast<std::tm*>(&to_date));
+
+	double accrued = 0.0;
+	for (std::time_t t = start; t <= end; t += 86400) {
+		std::tm* tm = std::localtime(&t);
+		if (is_weekday(*tm)) {
+			accrued += accrual_rate;
+		}
+	}
+	return accrued;
+}
+
 double calculate_accrued_hours(const json& days_off, const std::tm& start_date, double accrual_rate) {
 	std::time_t now = std::time(nullptr);
 	std::tm today = *std::localtime(&now);
@@ -140,19 +154,38 @@ void list_days_off(const json& days_off) {
 	}
 }
 
+bool is_future_date(std::tm& input_tm) {
+
+	input_tm.tm_hour = 0; 
+	input_tm.tm_min = 0; 
+	input_tm.tm_sec = 0;
+
+	std::time_t input_time = std::mktime(&input_tm);
+
+	// Get today's date, set to midnight
+	std::time_t now = std::time(nullptr);
+	std::tm today_tm = *std::localtime(&now);
+	today_tm.tm_hour = 0; today_tm.tm_min = 0; today_tm.tm_sec = 0;
+	std::time_t today_time = std::mktime(&today_tm);
+
+	return input_time > today_time;
+}
+
 void print_usage() {
-	std::cout << "Usage:\n"
+	std::cout << "Usage (date format used: yyyy-mm-dd):\n"
 		<< "  pto                        Show available PTO\n"
 		<< "  pto add <date> [hours]     Add a day off (default: 8 hours)\n"
 		<< "  pto add_range <start> <end> [hours/day]  Add range of days off (default: 8)\n"
-		<< "  pto show_days_off               Show all saved days off\n"
 		<< "  pto remove <date>          Remove entries matching a date (exact match to 'date' or 'start_date')\n"
-		<< "  pto usage                  Show this help message\n\n"
-		<< "Date format: yyyy-mm-dd\n\n";
+		<< "  pto show_days_off          Show all saved days off\n"
+		<< "  pto show_hrs_on <date>     Show amount of accrued hours on some future date\n"
+		<< "  pto usage                  Show this help message\n\n";
 }
 
+// TODO: show hours accrued on a date - this can be used to look ahead and know how much vaca time I'll have by
+// that date, assuming I don't take any additional time off between now and then.
 int main(int argc, char* argv[]) {
-
+	std::cout << std::fixed << std::setprecision(1);
 
 	// Show usage if explicitly asked
 	if (argc >= 2 && std::string(argv[1]) == "usage") {
@@ -175,6 +208,37 @@ int main(int argc, char* argv[]) {
 	std::ifstream days_off_ifs(DAYS_OFF_FILE);
 	if (days_off_ifs) {
 		days_off_ifs >> days_off;
+	}
+
+	// CLI: show hours on the provided date
+	if (argc >= 3 && std::string(argv[1]) == "show_hrs_on") {
+		std::string future_date = argv[2];
+		std::tm future_date_tm = date_string_to_tm(future_date);
+
+		// should this matter?
+		if (!is_weekday(future_date_tm)) {
+			std::cerr << "Error: Trying to show a date in the future that is a weekend.\n";
+			return 1;
+		}
+
+		// check that it is a date in the future
+		if (is_future_date(future_date_tm)) {
+			// accrue hours between when i started and then
+			std::tm start_tm = date_string_to_tm(settings["start_date"]);
+			double accrual_rate = settings["accrual_rate_per_day"];
+			double accrued_hours = calculate_accrued_hours_to(days_off, start_tm, future_date_tm, accrual_rate);
+
+			double hours_taken_off = calculate_hours_of_days_off(days_off);
+			double hours_available = accrued_hours - hours_taken_off;
+
+			std::cout << "Accrued hours to then: " << hours_available << " hours.\n";
+		}
+		else {
+			std::cerr << "Error: The date provided is not in the future.\n";
+			return 1;
+		}
+
+		return 0;
 	}
 
 	// CLI: add single date
@@ -270,11 +334,11 @@ int main(int argc, char* argv[]) {
 	std::tm start_tm = date_string_to_tm(settings["start_date"]);
 	double accrual_rate = settings["accrual_rate_per_day"];
 	double accrued_hours_since_hired = calculate_accrued_hours(days_off, start_tm, accrual_rate);
+	int working_days_since_hired = working_days_elapsed_since(start_tm);
 	double hours_taken_off = calculate_hours_of_days_off(days_off);
 	double hours_available = accrued_hours_since_hired - hours_taken_off;
-	int working_days_since_hired = working_days_elapsed_since(start_tm);
 
-	std::cout << std::fixed << std::setprecision(1);
+
 
 	std::cout << "=== Paid Time Off Tracker ===\n";
 
