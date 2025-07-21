@@ -15,6 +15,22 @@ using json = nlohmann::json;
 const std::string SETTINGS_FILE = "../../settings.json";
 const std::string DAYS_OFF_FILE = "../../days_off.json";
 
+// Formats hours as a string, converting to days and remaining hours if hours > 8
+std::string format_hrs(double hours) {
+    std::ostringstream oss;
+    if (hours > 8.0) {
+        int days = static_cast<int>(hours / 8.0);
+        double rem_hours = hours - (days * 8.0);
+        oss << days << " day" << (days == 1 ? "" : "s");
+        if (rem_hours > 0.01) {
+            oss << " " << std::fixed << std::setprecision(1) << rem_hours << " hr" << (rem_hours == 1.0 ? "" : "s");
+        }
+    } else {
+        oss << std::fixed << std::setprecision(1) << hours << " hr" << (hours == 1.0 ? "" : "s");
+    }
+    return oss.str();
+}
+
 static bool entry_exists(const nlohmann::json& days_off, const std::string& key, const std::string& date) {
 	for (const auto& entry : days_off) {
 		if (entry.contains(key) && entry[key] == date) {
@@ -142,16 +158,29 @@ void save_days_off(const std::string& path, const json& days_off) {
 }
 
 void list_days_off(const json& days_off) {
-	std::cout << "Saved days off:\n";
-	for (const auto& entry : days_off) {
-		if (entry.contains("date")) {
-			std::cout << "  " << entry["date"] << " (" << entry.value("hours", 8.0) << "h)\n";
-		}
-		else if (entry.contains("start_date")) {
-			std::cout << "  " << entry["start_date"] << " to " << entry["end_date"]
-				<< " (" << entry.value("hours_per_day", 8.0) << "h/day)\n";
-		}
-	}
+    if (days_off.empty()) {
+        std::cout << "No days off recorded.\n";
+        return;
+    }
+    std::cout << "-----------------------------------------------\n";
+    std::cout << std::left << std::setw(22) << "Date/Range" << std::setw(18) << "Type" << std::setw(10) << "Hours" << "\n";
+    std::cout << "-----------------------------------------------\n";
+    for (const auto& entry : days_off) {
+        if (entry.contains("date")) {
+            std::cout << std::right << std::setw(22) << entry["date"]
+                      << std::setw(18) << "Single Day"
+                      << std::setw(14) << entry.value("hours", 8.0)
+                      << "\n";
+        }
+        else if (entry.contains("start_date")) {
+            std::string range = std::string(entry["start_date"]) + " to " + std::string(entry["end_date"]);
+            std::cout << std::right << std::setw(22) << range
+                      << std::setw(18) << "Range"
+                      << std::setw(14) << entry.value("hours_per_day", 8.0)
+                      << "\n";
+        }
+    }
+    std::cout << "-----------------------------------------------\n";
 }
 
 bool is_future_date(std::tm& input_tm) {
@@ -184,6 +213,117 @@ void print_usage() {
 
 // TODO: show hours accrued on a date - this can be used to look ahead and know how much vaca time I'll have by
 // that date, assuming I don't take any additional time off between now and then.
+// Show accrued hours on a specific future date
+void show_hrs_on(const json& settings, const json& days_off, const std::string& future_date) {
+    std::tm future_date_tm = date_string_to_tm(future_date);
+
+    // should this matter?
+    if (!is_weekday(future_date_tm)) {
+        std::cerr << "Error: Trying to show a date in the future that is a weekend.\n";
+        return;
+    }
+
+    // check that it is a date in the future
+    if (is_future_date(future_date_tm)) {
+        // accrue hours between when i started and then
+        std::tm start_tm = date_string_to_tm(settings["start_date"]);
+        double accrual_rate = settings["accrual_rate_per_day"];
+        double accrued_hours = calculate_accrued_hours_to(days_off, start_tm, future_date_tm, accrual_rate);
+
+        double hours_taken_off = calculate_hours_of_days_off(days_off);
+        double hours_available = accrued_hours - hours_taken_off;
+
+        std::cout << "Accrued hours to then: " << format_hrs(hours_available) << " hours.\n";
+    }
+    else {
+        std::cerr << "Error: The date provided is not in the future.\n";
+    }
+}
+
+// Add a single day off
+void add_day_off(json& days_off, const std::string& date, double hours) {
+    // don't add a date that already exists
+    if (entry_exists(days_off, "date", date)) {
+        std::cerr << "Error: A time-off entry for " << date << " already exists.\n";
+        return;
+    }
+
+    // don't add a weekend day
+    std::tm date_tm = date_string_to_tm(date);
+    if (!is_weekday(date_tm)) {
+        std::cerr << "Error: Trying to add a date that is a weekend.\n";
+        return;
+    }
+
+    days_off.push_back({ {"date", date}, {"hours", hours} });
+    save_days_off(DAYS_OFF_FILE, days_off);
+    std::cout << "Added day off: " << date << " (" << hours << "h)\n";
+}
+
+// Add a range of days off
+void add_range_days_off(json& days_off, const std::string& start, const std::string& end, double hours_per_day) {
+    // doesn't handle an overlap. for example if 06/20 is already in the days off and we add
+    // 6/19-6/22, its not going to care...
+    if (entry_exists(days_off, "date", start) || entry_exists(days_off, "date", end) || 
+        entry_exists(days_off, "start_date", start) || entry_exists(days_off, "start_date", end) || 
+        entry_exists(days_off, "end_date", start) || entry_exists(days_off, "end_date", end)) {
+        std::cerr << "Error: A time-off entry already exists for the start or end date.\n";
+        return;
+    }
+
+    // don't add a weekend day
+    std::tm start_tm = date_string_to_tm(start);
+    if (!is_weekday(start_tm)) {
+        std::cerr << "Error: Trying to add a start_date that is a weekend.\n";
+        return;
+    }
+    std::tm end_tm = date_string_to_tm(end);
+    if (!is_weekday(end_tm)) {
+        std::cerr << "Error: Trying to add a end_date that is a weekend.\n";
+        return;
+    }
+
+    days_off.push_back({
+        {"start_date", start},
+        {"end_date", end},
+        {"hours_per_day", hours_per_day}
+    });
+    save_days_off(DAYS_OFF_FILE, days_off);
+    std::cout << "Added days off: " << start << " to " << end << " (" << hours_per_day << "h/day)\n";
+}
+
+// Print the days that have been taken off and a summary
+void print_pto_summary(const json& settings, const json& days_off) {
+    std::tm start_tm = date_string_to_tm(settings["start_date"]);
+    double accrual_rate = settings["accrual_rate_per_day"];
+	std::string accrual_rate_str = std::to_string(accrual_rate) + " hours/day";
+
+    double accrued_hours_since_hired = calculate_accrued_hours(days_off, start_tm, accrual_rate);
+    int working_days_since_hired = working_days_elapsed_since(start_tm);
+	std::string working_days_since_hired_str = std::to_string(working_days_since_hired) + " days";
+    double hours_taken_off = calculate_hours_of_days_off(days_off);
+    double hours_available = accrued_hours_since_hired - hours_taken_off;
+
+    std::cout << "\n===============================================\n";
+    std::cout << "         Paid Time Off Tracker          \n";
+    std::cout <<   "===============================================\n\n";
+
+    list_days_off(days_off);
+
+    std::cout << "\n-----------------------------------------------\n";
+    std::cout << std::setw(28) << std::left << "Accrual Rate:" 				<< std::setw(15) << std::right << accrual_rate_str << "\n";
+    std::cout << std::setw(28) << std::left << "Working Days Since Hired:" << std::setw(15) << std::right << working_days_since_hired_str << "\n";
+    std::cout << std::setw(28) << std::left << "Time Accrued:" << std::setw(15) << std::right << format_hrs(accrued_hours_since_hired) << "\n";
+    std::cout << std::setw(28) << std::left << "Time Used:" << std::setw(15) << std::right << format_hrs(hours_taken_off) << "\n";
+    std::cout << std::setw(28) << std::left << "Time Balance:" << std::setw(15) << std::right << format_hrs(hours_available) << "\n";
+    std::cout <<   "-----------------------------------------------\n";
+
+    if (hours_available > 40) {
+        std::cout << "\n*** YOU SHOULD TAKE SOME VACATION! ***\n";
+    }
+    std::cout << std::endl;
+}
+
 int main(int argc, char* argv[]) {
 	std::cout << std::fixed << std::setprecision(1);
 
@@ -212,32 +352,7 @@ int main(int argc, char* argv[]) {
 
 	// CLI: show hours on the provided date
 	if (argc >= 3 && std::string(argv[1]) == "show_hrs_on") {
-		std::string future_date = argv[2];
-		std::tm future_date_tm = date_string_to_tm(future_date);
-
-		// should this matter?
-		if (!is_weekday(future_date_tm)) {
-			std::cerr << "Error: Trying to show a date in the future that is a weekend.\n";
-			return 1;
-		}
-
-		// check that it is a date in the future
-		if (is_future_date(future_date_tm)) {
-			// accrue hours between when i started and then
-			std::tm start_tm = date_string_to_tm(settings["start_date"]);
-			double accrual_rate = settings["accrual_rate_per_day"];
-			double accrued_hours = calculate_accrued_hours_to(days_off, start_tm, future_date_tm, accrual_rate);
-
-			double hours_taken_off = calculate_hours_of_days_off(days_off);
-			double hours_available = accrued_hours - hours_taken_off;
-
-			std::cout << "Accrued hours to then: " << hours_available << " hours.\n";
-		}
-		else {
-			std::cerr << "Error: The date provided is not in the future.\n";
-			return 1;
-		}
-
+		show_hrs_on(settings, days_off, argv[2]);
 		return 0;
 	}
 
@@ -245,23 +360,7 @@ int main(int argc, char* argv[]) {
 	if (argc >= 3 && std::string(argv[1]) == "add") {
 		std::string date = argv[2];
 		double hours = (argc >= 4) ? std::stod(argv[3]) : 8.0;
-
-		// don't add a date that already exists
-		if (entry_exists(days_off, "date", date)) {
-			std::cerr << "Error: A time-off entry for " << date << " already exists.\n";
-			return 1;
-		}
-
-		// don't add a weekend day
-		std::tm date_tm = date_string_to_tm(date);
-		if (!is_weekday(date_tm)) {
-			std::cerr << "Error: Trying to add a date that is a weekend.\n";
-			return 1;
-		}
-
-		days_off.push_back({ {"date", date}, {"hours", hours} });
-		save_days_off(DAYS_OFF_FILE, days_off);
-		std::cout << "Added day off: " << date << " (" << hours << "h)\n";
+		add_day_off(days_off, date, hours);
 		return 0;
 	}
 
@@ -270,35 +369,7 @@ int main(int argc, char* argv[]) {
 		std::string start = argv[2];
 		std::string end = argv[3];
 		double hours_per_day = (argc >= 5) ? std::stod(argv[4]) : 8.0;
-
-		// doesn't handle an overlap. for example if 06/20 is already in the days off and we add
-		// 6/19-6/22, its not going to care...
-		if (entry_exists(days_off, "date", start) || entry_exists(days_off, "date", end) || 
-			entry_exists(days_off, "start_date", start) || entry_exists(days_off, "start_date", end) || 
-			entry_exists(days_off, "end_date", start) || entry_exists(days_off, "end_date", end)) {
-			std::cerr << "Error: A time-off entry already exists for the start or end date.\n";
-			return 1;
-		}
-
-		// don't add a weekend day
-		std::tm start_tm = date_string_to_tm(start);
-		if (!is_weekday(start_tm)) {
-			std::cerr << "Error: Trying to add a start_date that is a weekend.\n";
-			return 1;
-		}
-		std::tm end_tm = date_string_to_tm(end);
-		if (!is_weekday(end_tm)) {
-			std::cerr << "Error: Trying to add a end_date that is a weekend.\n";
-			return 1;
-		}
-
-		days_off.push_back({
-			{"start_date", start},
-			{"end_date", end},
-			{"hours_per_day", hours_per_day}
-			});
-		save_days_off(DAYS_OFF_FILE, days_off);
-		std::cout << "Added days off: " << start << " to " << end << " (" << hours_per_day << "h/day)\n";
+		add_range_days_off(days_off, start, end, hours_per_day);
 		return 0;
 	}
 
@@ -331,28 +402,9 @@ int main(int argc, char* argv[]) {
 	}
 
 	// Default behavior: calculate PTO
-	std::tm start_tm = date_string_to_tm(settings["start_date"]);
-	double accrual_rate = settings["accrual_rate_per_day"];
-	double accrued_hours_since_hired = calculate_accrued_hours(days_off, start_tm, accrual_rate);
-	int working_days_since_hired = working_days_elapsed_since(start_tm);
-	double hours_taken_off = calculate_hours_of_days_off(days_off);
-	double hours_available = accrued_hours_since_hired - hours_taken_off;
-
-
-
-	std::cout << "=== Paid Time Off Tracker ===\n";
-
-	list_days_off(days_off);
-
-	std::cout << "Summary:\n"
-		<< "  Accrual Rate:             " << accrual_rate << " hours/day\n"
-		<< "  Working Days Since Hired: " << working_days_since_hired << " days\n"
-		<< "  Hours Accrued:            " << accrued_hours_since_hired << " hours\n"
-		<< "  Hours Used:               " << hours_taken_off << " hours\n"
-		<< "  Hours Balance:            " << hours_available << " hours\n";
-
-	if (hours_available > 40) {
-		std::cout << "YOU SHOULD TAKE SOME VACATION!!!!";
+	if (argc == 1) {
+		print_pto_summary(settings, days_off);
+		return 0;
 	}
 	
 
