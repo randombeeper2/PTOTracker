@@ -9,6 +9,8 @@
 #include <json.hpp>
 #include <ctime>
 #include <iomanip>
+#include "tabulate.hpp"
+using namespace tabulate;
 
 using json = nlohmann::json;
 
@@ -162,25 +164,45 @@ void list_days_off(const json& days_off) {
         std::cout << "No days off recorded.\n";
         return;
     }
-    std::cout << "-----------------------------------------------\n";
-    std::cout << std::left << std::setw(22) << "Date/Range" << std::setw(18) << "Type" << std::setw(10) << "Hours" << "\n";
-    std::cout << "-----------------------------------------------\n";
+    std::cout << "--------------------------------------------------------------\n";
+    std::cout << std::left << std::setw(25) << "Date/Range"
+              << std::right << std::setw(18) << "Type"
+              << std::right << std::setw(14) << "Hours" << "\n";
+    std::cout << "--------------------------------------------------------------\n";
     for (const auto& entry : days_off) {
         if (entry.contains("date")) {
-            std::cout << std::right << std::setw(22) << entry["date"]
-                      << std::setw(18) << "Single Day"
-                      << std::setw(14) << entry.value("hours", 8.0)
+            std::cout << std::left << std::setw(25) << std::string(entry["date"])
+                      << std::right << std::setw(18) << "Single Day"
+                      << std::right << std::setw(14) << entry.value("hours", 8.0)
                       << "\n";
         }
         else if (entry.contains("start_date")) {
             std::string range = std::string(entry["start_date"]) + " to " + std::string(entry["end_date"]);
-            std::cout << std::right << std::setw(22) << range
-                      << std::setw(18) << "Range"
-                      << std::setw(14) << entry.value("hours_per_day", 8.0)
+            std::cout << std::left << std::setw(25) << range
+                      << std::right << std::setw(18) << "Range"
+                      << std::right << std::setw(14) << entry.value("hours_per_day", 8.0)
                       << "\n";
         }
     }
-    std::cout << "-----------------------------------------------\n";
+    std::cout << "--------------------------------------------------------------\n";
+}
+
+// Print the days that have been taken off using tabulate
+void list_days_off_tabulate(const json& days_off) {
+	std::cout << "Logged Time Off\n";
+    Table table;
+    table.add_row({"Date/Range", "Type", "Hours"});
+    for (const auto& entry : days_off) {
+        if (entry.contains("date")) {
+            table.add_row({std::string(entry["date"]), "Single Day", std::to_string(entry.value("hours", 8.0))});
+        } else if (entry.contains("start_date")) {
+            std::string range = std::string(entry["start_date"]) + " to " + std::string(entry["end_date"]);
+            table.add_row({range, "Range", std::to_string(entry.value("hours_per_day", 8.0))});
+        }
+    }
+    std::cout << table << std::endl;
+
+	std::cout << "\n";
 }
 
 bool is_future_date(std::tm& input_tm) {
@@ -308,23 +330,26 @@ void print_pto_summary(const json& settings, const json& days_off) {
     std::cout << "         Paid Time Off Tracker          \n";
     std::cout <<   "===============================================\n\n";
 
-    list_days_off(days_off);
+    
+    list_days_off_tabulate(days_off);
 
-    std::cout << "\n-----------------------------------------------\n";
-    std::cout << std::setw(28) << std::left << "Accrual Rate:" 				<< std::setw(15) << std::right << accrual_rate_str << "\n";
-    std::cout << std::setw(28) << std::left << "Working Days Since Hired:" << std::setw(15) << std::right << working_days_since_hired_str << "\n";
-    std::cout << std::setw(28) << std::left << "Time Accrued:" << std::setw(15) << std::right << format_hrs(accrued_hours_since_hired) << "\n";
-    std::cout << std::setw(28) << std::left << "Time Used:" << std::setw(15) << std::right << format_hrs(hours_taken_off) << "\n";
-    std::cout << std::setw(28) << std::left << "Time Balance:" << std::setw(15) << std::right << format_hrs(hours_available) << "\n";
-    std::cout <<   "-----------------------------------------------\n";
-
-    if (hours_available > 40) {
-        std::cout << "\n*** YOU SHOULD TAKE SOME VACATION! ***\n";
-    }
-    if (hours_available < 0) {
+	std::cout << "Summary\n";
+    Table summary_table;
+    summary_table.add_row({"Accrual Rate:", accrual_rate_str});
+    summary_table.add_row({"Working Days Since Hired:", working_days_since_hired_str});
+    summary_table.add_row({"Time Accrued:", format_hrs(accrued_hours_since_hired)});
+    summary_table.add_row({"Time Used:", format_hrs(hours_taken_off)});
+    summary_table.add_row({"Time Balance:", format_hrs(hours_available)});
+	if (hours_available < 0) {
         int days_needed = static_cast<int>(std::ceil(std::abs(hours_available) / accrual_rate));
-        std::cout << "\n*** You need to work " << days_needed << " more working day" << (days_needed == 1 ? "" : "s") << " to bring your PTO balance back to zero. ***\n";
+		summary_table.add_row({"Days Needed To Get To 0:", std::to_string(days_needed)});
     }
+    if (hours_available > 40) {
+		summary_table.add_row({"You Have A Problem", "YES, YOU SHOULD TAKE SOME VACATION!"});
+    }
+    std::cout << summary_table << std::endl;
+
+
     std::cout << std::endl;
 }
 
