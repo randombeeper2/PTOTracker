@@ -321,6 +321,10 @@ void print_pto_summary(const json& settings, const json& days_off) {
     if (hours_available > 40) {
         std::cout << "\n*** YOU SHOULD TAKE SOME VACATION! ***\n";
     }
+    if (hours_available < 0) {
+        int days_needed = static_cast<int>(std::ceil(std::abs(hours_available) / accrual_rate));
+        std::cout << "\n*** You need to work " << days_needed << " more working day" << (days_needed == 1 ? "" : "s") << " to bring your PTO balance back to zero. ***\n";
+    }
     std::cout << std::endl;
 }
 
