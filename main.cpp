@@ -191,13 +191,13 @@ void list_days_off(const json& days_off) {
 void list_days_off_tabulate(const json& days_off) {
 	std::cout << "Logged Time Off\n";
     Table table;
-    table.add_row({"Date/Range", "Type", "Hours"});
+    table.add_row({"Date/Range", "Type", "Time Off"});
     for (const auto& entry : days_off) {
         if (entry.contains("date")) {
-            table.add_row({std::string(entry["date"]), "Single Day", std::to_string(entry.value("hours", 8.0))});
+            table.add_row({std::string(entry["date"]), "Single Day", format_hrs(entry.value("hours", 8.0))});
         } else if (entry.contains("start_date")) {
             std::string range = std::string(entry["start_date"]) + " to " + std::string(entry["end_date"]);
-            table.add_row({range, "Range", std::to_string(entry.value("hours_per_day", 8.0))});
+            table.add_row({range, "Range", format_hrs(entry.value("hours_per_day", 8.0))});
         }
     }
     std::cout << table << std::endl;
