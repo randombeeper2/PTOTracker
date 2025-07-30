@@ -20,7 +20,7 @@ const std::string DAYS_OFF_FILE = "../../days_off.json";
 // Formats hours as a string, converting to days and remaining hours if hours > 8
 std::string format_hrs(double hours) {
     std::ostringstream oss;
-    if (hours > 8.0) {
+    if (hours >= 8.0) {
         int days = static_cast<int>(hours / 8.0);
         double rem_hours = hours - (days * 8.0);
         oss << days << " day" << (days == 1 ? "" : "s");
@@ -194,10 +194,24 @@ void list_days_off_tabulate(const json& days_off) {
     table.add_row({"Date/Range", "Type", "Time Off"});
     for (const auto& entry : days_off) {
         if (entry.contains("date")) {
-            table.add_row({std::string(entry["date"]), "Single Day", format_hrs(entry.value("hours", 8.0))});
+            std::string time_off = format_hrs(entry.value("hours", 8.0));
+            table.add_row({std::string(entry["date"]), "Single Day", time_off});
         } else if (entry.contains("start_date")) {
             std::string range = std::string(entry["start_date"]) + " to " + std::string(entry["end_date"]);
-            table.add_row({range, "Range", format_hrs(entry.value("hours_per_day", 8.0))});
+            double hours_per_day = entry.value("hours_per_day", 8.0);
+            std::tm start_tm = date_string_to_tm(entry["start_date"]);
+            std::tm end_tm = date_string_to_tm(entry["end_date"]);
+            std::time_t start = std::mktime(&start_tm);
+            std::time_t end = std::mktime(&end_tm);
+            int weekday_count = 0;
+            for (std::time_t t = start; t <= end; t += 86400) {
+                std::tm* current_tm = std::localtime(&t);
+                if (is_weekday(*current_tm)) {
+                    weekday_count++;
+                }
+            }
+            double total_time_off = weekday_count * hours_per_day;
+            table.add_row({range, "Range", format_hrs(total_time_off)});
         }
     }
     std::cout << table << std::endl;
