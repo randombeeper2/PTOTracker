@@ -1,22 +1,27 @@
 [
   {
     "date": "2025-06-13",
-    "hours": 4
+    "hours": 4,
+    "reason": "Half-day off for personal reasons"
   },
   {
-    "date": "2025-06-20"
+    "date": "2025-06-20",
+    "reason": "Day off for personal reasons"
   },
   {
     "end_date": "2025-08-01",
     "hours_per_day": 8.0,
-    "start_date": "2025-07-31"
+    "start_date": "2025-07-31",
+    "reason": "mom visiting"
   },
   {
     "date": "2025-08-29",
-    "hours": 8.0
+    "hours": 8.0,
+    "reason": "day off while friend is here"
   },
   {
     "date": "2025-09-12",
-    "hours": 8.0
+    "hours": 8.0,
+    "reason": "day off to take care of carly after surgery"
   }
 ]

@@ -160,62 +160,67 @@ void save_days_off(const std::string& path, const json& days_off) {
 }
 
 void list_days_off(const json& days_off) {
-    if (days_off.empty()) {
-        std::cout << "No days off recorded.\n";
-        return;
-    }
-    std::cout << "--------------------------------------------------------------\n";
-    std::cout << std::left << std::setw(25) << "Date/Range"
-              << std::right << std::setw(18) << "Type"
-              << std::right << std::setw(14) << "Hours" << "\n";
-    std::cout << "--------------------------------------------------------------\n";
-    for (const auto& entry : days_off) {
-        if (entry.contains("date")) {
-            std::cout << std::left << std::setw(25) << std::string(entry["date"])
-                      << std::right << std::setw(18) << "Single Day"
-                      << std::right << std::setw(14) << entry.value("hours", 8.0)
-                      << "\n";
-        }
-        else if (entry.contains("start_date")) {
-            std::string range = std::string(entry["start_date"]) + " to " + std::string(entry["end_date"]);
-            std::cout << std::left << std::setw(25) << range
-                      << std::right << std::setw(18) << "Range"
-                      << std::right << std::setw(14) << entry.value("hours_per_day", 8.0)
-                      << "\n";
-        }
-    }
-    std::cout << "--------------------------------------------------------------\n";
+	if (days_off.empty()) {
+		std::cout << "No days off recorded.\n";
+		return;
+	}
+	std::cout << "-------------------------------------------------------------------------------\n";
+	std::cout << std::left << std::setw(25) << "Date/Range"
+		<< std::right << std::setw(18) << "Type"
+		<< std::right << std::setw(14) << "Hours"
+		<< std::right << std::setw(20) << "Reason" << "\n";
+	std::cout << "-------------------------------------------------------------------------------\n";
+	for (const auto& entry : days_off) {
+		std::string reason = entry.value("reason", "");
+		if (entry.contains("date")) {
+			std::cout << std::left << std::setw(25) << std::string(entry["date"])
+				<< std::right << std::setw(18) << "Single Day"
+				<< std::right << std::setw(14) << entry.value("hours", 8.0)
+				<< std::right << std::setw(20) << reason
+				<< "\n";
+		}
+		else if (entry.contains("start_date")) {
+			std::string range = std::string(entry["start_date"]) + " to " + std::string(entry["end_date"]);
+			std::cout << std::left << std::setw(25) << range
+				<< std::right << std::setw(18) << "Range"
+				<< std::right << std::setw(14) << entry.value("hours_per_day", 8.0)
+				<< std::right << std::setw(20) << reason
+				<< "\n";
+		}
+	}
+	std::cout << "-------------------------------------------------------------------------------\n";
 }
 
 // Print the days that have been taken off using tabulate
 void list_days_off_tabulate(const json& days_off) {
 	std::cout << "Logged Time Off\n";
-    Table table;
-    table.add_row({"Date/Range", "Type", "Time Off"});
-    for (const auto& entry : days_off) {
-        if (entry.contains("date")) {
-            std::string time_off = format_hrs(entry.value("hours", 8.0));
-            table.add_row({std::string(entry["date"]), "Single Day", time_off});
-        } else if (entry.contains("start_date")) {
-            std::string range = std::string(entry["start_date"]) + " to " + std::string(entry["end_date"]);
-            double hours_per_day = entry.value("hours_per_day", 8.0);
-            std::tm start_tm = date_string_to_tm(entry["start_date"]);
-            std::tm end_tm = date_string_to_tm(entry["end_date"]);
-            std::time_t start = std::mktime(&start_tm);
-            std::time_t end = std::mktime(&end_tm);
-            int weekday_count = 0;
-            for (std::time_t t = start; t <= end; t += 86400) {
-                std::tm* current_tm = std::localtime(&t);
-                if (is_weekday(*current_tm)) {
-                    weekday_count++;
-                }
-            }
-            double total_time_off = weekday_count * hours_per_day;
-            table.add_row({range, "Range", format_hrs(total_time_off)});
-        }
-    }
-    std::cout << table << std::endl;
-
+	Table table;
+	table.add_row({ "Date/Range", "Type", "Time Off", "Reason" });
+	for (const auto& entry : days_off) {
+		std::string reason = entry.value("reason", "");
+		if (entry.contains("date")) {
+			std::string time_off = format_hrs(entry.value("hours", 8.0));
+			table.add_row({ std::string(entry["date"]), "Single Day", time_off, reason });
+		}
+		else if (entry.contains("start_date")) {
+			std::string range = std::string(entry["start_date"]) + " to " + std::string(entry["end_date"]);
+			double hours_per_day = entry.value("hours_per_day", 8.0);
+			std::tm start_tm = date_string_to_tm(entry["start_date"]);
+			std::tm end_tm = date_string_to_tm(entry["end_date"]);
+			std::time_t start = std::mktime(&start_tm);
+			std::time_t end = std::mktime(&end_tm);
+			int weekday_count = 0;
+			for (std::time_t t = start; t <= end; t += 86400) {
+				std::tm* current_tm = std::localtime(&t);
+				if (is_weekday(*current_tm)) {
+					weekday_count++;
+				}
+			}
+			double total_time_off = weekday_count * hours_per_day;
+			table.add_row({ range, "Range", format_hrs(total_time_off), reason });
+		}
+	}
+	std::cout << table << std::endl;
 	std::cout << "\n";
 }
 
@@ -277,55 +282,47 @@ void show_hrs_on(const json& settings, const json& days_off, const std::string& 
 }
 
 // Add a single day off
-void add_day_off(json& days_off, const std::string& date, double hours) {
-    // don't add a date that already exists
+void add_day_off(json& days_off, const std::string& date, double hours, const std::string& reason) {
     if (entry_exists(days_off, "date", date)) {
         std::cerr << "Error: A time-off entry for " << date << " already exists.\n";
         return;
     }
-
-    // don't add a weekend day
     std::tm date_tm = date_string_to_tm(date);
     if (!is_weekday(date_tm)) {
         std::cerr << "Error: Trying to add a date that is a weekend.\n";
         return;
     }
-
-    days_off.push_back({ {"date", date}, {"hours", hours} });
+    days_off.push_back({ {"date", date}, {"hours", hours}, {"reason", reason} });
     save_days_off(DAYS_OFF_FILE, days_off);
-    std::cout << "Added day off: " << date << " (" << hours << "h)\n";
+    std::cout << "Added day off: " << date << " (" << hours << "h, Reason: " << reason << ")\n";
 }
 
 // Add a range of days off
-void add_range_days_off(json& days_off, const std::string& start, const std::string& end, double hours_per_day) {
-    // doesn't handle an overlap. for example if 06/20 is already in the days off and we add
-    // 6/19-6/22, its not going to care...
-    if (entry_exists(days_off, "date", start) || entry_exists(days_off, "date", end) || 
-        entry_exists(days_off, "start_date", start) || entry_exists(days_off, "start_date", end) || 
-        entry_exists(days_off, "end_date", start) || entry_exists(days_off, "end_date", end)) {
-        std::cerr << "Error: A time-off entry already exists for the start or end date.\n";
-        return;
-    }
-
-    // don't add a weekend day
-    std::tm start_tm = date_string_to_tm(start);
-    if (!is_weekday(start_tm)) {
-        std::cerr << "Error: Trying to add a start_date that is a weekend.\n";
-        return;
-    }
-    std::tm end_tm = date_string_to_tm(end);
-    if (!is_weekday(end_tm)) {
-        std::cerr << "Error: Trying to add a end_date that is a weekend.\n";
-        return;
-    }
-
-    days_off.push_back({
-        {"start_date", start},
-        {"end_date", end},
-        {"hours_per_day", hours_per_day}
-    });
-    save_days_off(DAYS_OFF_FILE, days_off);
-    std::cout << "Added days off: " << start << " to " << end << " (" << hours_per_day << "h/day)\n";
+void add_range_days_off(json& days_off, const std::string& start, const std::string& end, double hours_per_day, const std::string& reason) {
+	if (entry_exists(days_off, "date", start) || entry_exists(days_off, "date", end) ||
+		entry_exists(days_off, "start_date", start) || entry_exists(days_off, "start_date", end) ||
+		entry_exists(days_off, "end_date", start) || entry_exists(days_off, "end_date", end)) {
+		std::cerr << "Error: A time-off entry already exists for the start or end date.\n";
+		return;
+	}
+	std::tm start_tm = date_string_to_tm(start);
+	if (!is_weekday(start_tm)) {
+		std::cerr << "Error: Trying to add a start_date that is a weekend.\n";
+		return;
+	}
+	std::tm end_tm = date_string_to_tm(end);
+	if (!is_weekday(end_tm)) {
+		std::cerr << "Error: Trying to add a end_date that is a weekend.\n";
+		return;
+	}
+	days_off.push_back({
+		{"start_date", start},
+		{"end_date", end},
+		{"hours_per_day", hours_per_day},
+		{"reason", reason}
+		});
+	save_days_off(DAYS_OFF_FILE, days_off);
+	std::cout << "Added days off: " << start << " to " << end << " (" << hours_per_day << "h/day, Reason: " << reason << ")\n";
 }
 
 // Print the days that have been taken off and a summary
@@ -403,7 +400,8 @@ int main(int argc, char* argv[]) {
 	if (argc >= 3 && std::string(argv[1]) == "add") {
 		std::string date = argv[2];
 		double hours = (argc >= 4) ? std::stod(argv[3]) : 8.0;
-		add_day_off(days_off, date, hours);
+		std::string reason = (argc >= 5) ? argv[4] : "";
+		add_day_off(days_off, date, hours, reason);
 		return 0;
 	}
 
@@ -412,7 +410,8 @@ int main(int argc, char* argv[]) {
 		std::string start = argv[2];
 		std::string end = argv[3];
 		double hours_per_day = (argc >= 5) ? std::stod(argv[4]) : 8.0;
-		add_range_days_off(days_off, start, end, hours_per_day);
+		std::string reason = (argc >= 6) ? argv[5] : "";
+		add_range_days_off(days_off, start, end, hours_per_day, reason);
 		return 0;
 	}
 
